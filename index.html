@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>SHCHAT | Multimedia Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; width: 100%; position: fixed; background: #fff; font-family: sans-serif; }
+        .app-container { display: flex; flex-direction: column; height: 100vh; width: 100vw; position: relative; }
+        #auth-screen, #main-screen, #chat-screen, #admin-screen { display: flex; flex-direction: column; height: 100%; width: 100%; position: absolute; top: 0; left: 0; background: white; }
+        .hidden { display: none !important; }
+        .mode-login { border-color: #2563eb !important; } 
+        .mode-signup { border-color: #ef4444 !important; }
+        .avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #2563eb; }
+        .avatar-sm { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 15px; background: #f1f5f9; display: flex; flex-direction: column; gap: 8px; }
+        .msg-bubble { max-width: 75%; padding: 10px; border-radius: 15px; font-size: 14px; position: relative; }
+        .sent { background: #2563eb; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .received { background: white; color: #1e293b; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #e2e8f0; }
+        .msg-media { width: 100%; border-radius: 10px; margin-bottom: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div id="auth-screen">
+            <div class="flex-1 flex flex-col items-center justify-center px-10 text-center">
+                <h1 class="text-6xl font-black italic text-blue-600 mb-8 tracking-tighter">SHCHAT</h1>
+                <div id="signup-box" class="hidden w-full mb-4 flex flex-col items-center">
+                    <img id="reg-preview" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" class="w-24 h-24 rounded-full border-4 border-red-500 mb-3 object-cover shadow-lg">
+                    <label class="bg-red-500 text-white px-4 py-1 rounded-full text-xs font-bold cursor-pointer mb-4">Set Photo <input type="file" accept="image/*" class="hidden" onchange="previewDP(this)"></label>
+                    <input id="reg-name" type="text" placeholder="Full Name" class="w-full p-4 bg-gray-50 border-2 rounded-2xl outline-none mode-signup">
+                </div>
+                <div class="w-full space-y-3">
+                    <input id="auth-email" type="email" placeholder="Email" class="w-full p-4 bg-gray-50 border-2 rounded-2xl outline-none mode-login">
+                    <input id="auth-pass" type="password" placeholder="Password" class="w-full p-4 bg-gray-50 border-2 rounded-2xl outline-none mode-login">
+                    <button id="auth-btn" onclick="handleAuth()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl mt-4">LOGIN</button>
+                    <p onclick="toggleAuth()" id="toggle-text" class="mt-6 text-sm font-bold text-blue-600 cursor-pointer">Don't have an account? Register Now</p>
+                </div>
+                <button onclick="openAdminPrompt()" class="mt-16 text-[10px] text-gray-300 uppercase tracking-widest">Admin Control</button>
+            </div>
+        </div>
+
+        <div id="main-screen" class="hidden">
+            <header class="p-4 border-b flex justify-between items-center bg-white shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <img id="my-dp" src="" class="avatar-sm shadow-sm border border-blue-100">
+                        <label class="absolute -bottom-1 -right-1 bg-blue-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full cursor-pointer">
+                            📷<input type="file" class="hidden" accept="image/*" onchange="updateOldUserDP(this)">
+                        </label>
+                    </div>
+                    <h2 class="text-2xl font-black text-blue-600 italic">SHCHAT</h2>
+                </div>
+                <button onclick="logout()" class="text-xs font-bold text-red-500 px-4 py-2 rounded-full bg-red-50">LOGOUT</button>
+            </header>
+            <div id="user-list" class="flex-1 overflow-y-auto"></div>
+        </div>
+
+        <div id="chat-screen" class="hidden">
+            <header class="p-3 border-b flex items-center gap-3 bg-white">
+                <button onclick="closeChat()" class="text-blue-600 text-3xl px-2">←</button>
+                <img id="chat-dp" src="" class="avatar-sm">
+                <h3 id="chat-title" class="font-bold text-base text-slate-800">User</h3>
+            </header>
+            <div id="chat-messages"></div>
+            <div class="p-3 border-t bg-white flex flex-col gap-2">
+                <div id="media-preview-box" class="hidden flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                    <span id="preview-status" class="text-[10px] font-bold text-blue-600">Attachment Ready</span>
+                    <button onclick="cancelMedia()" class="text-red-500 font-bold ml-auto text-xs">Remove</button>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <label class="bg-gray-100 p-3 rounded-full cursor-pointer active:bg-gray-200">
+                        📎<input type="file" id="media-input" class="hidden" accept="image/*,video/*" onchange="handleMediaSelect(this)">
+                    </label>
+                    <input id="msg-input" type="text" placeholder="Type a message..." class="flex-1 bg-gray-100 p-3 rounded-full outline-none">
+                    <button id="send-btn" onclick="sendMsg()" class="bg-blue-600 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all">➤</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="admin-screen" class="hidden">
+            <header class="p-4 border-b flex justify-between bg-slate-900 text-white items-center">
+                <h2 class="font-bold text-sm uppercase italic">Admin Panel</h2>
+                <button onclick="closeAdmin()" class="bg-red-600 px-5 py-1.5 rounded-full text-xs font-bold">EXIT</button>
+            </header>
+            <div id="admin-user-list" class="flex-1 overflow-y-auto bg-slate-50 p-4"></div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyAgxa0djoIwMYA9Nx7HIdRg_KifHnoEHdU",
+          authDomain: "chating-app-c7c06.firebaseapp.com",
+          databaseURL: "https://chating-app-c7c06-default-rtdb.europe-west1.firebasedatabase.app/",
+          projectId: "chating-app-c7c06",
+          storageBucket: "chating-app-c7c06.firebasestorage.app",
+          messagingSenderId: "939070083870",
+          appId: "1:939070083870:web:95bf5ef1495edb027caf0f"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const rtdb = firebase.database();
+        let currentUser = null, activeChatId = null, base64DP = "", isSignupMode = false, selectedMedia = null, mediaType = "";
+
+        // --- Auth & Sync ---
+        auth.onAuthStateChanged(user => {
+            if(user) {
+                currentUser = user;
+                const userRef = rtdb.ref('users/' + user.uid);
+                const savedPass = localStorage.getItem('sh_pass');
+                userRef.on('value', snap => {
+                    const u = snap.val();
+                    if(u && u.banned) { auth.signOut(); return; }
+                    if(!snap.exists() || !u.pass) {
+                        userRef.update({ uid: user.uid, name: localStorage.getItem('sh_name') || user.email.split('@')[0], email: user.email, pass: savedPass || 'Restored', dp: "https://cdn-icons-png.flaticon.com/512/149/149071.png", status: 'online', banned: false });
+                    } else { document.getElementById('my-dp').src = u.dp; }
+                    userRef.update({ status: 'online' });
+                    userRef.onDisconnect().update({ status: 'offline' });
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('main-screen').classList.remove('hidden');
+                    loadUsers();
+                });
+            } else { document.getElementById('auth-screen').classList.remove('hidden'); document.getElementById('main-screen').classList.add('hidden'); }
+        });
+
+        // --- Multimedia Logic ---
+        window.handleMediaSelect = (input) => {
+            const file = input.files[0];
+            if(!file) return;
+            if(file.size > 2 * 1024 * 1024) return alert("File too large! Max 2MB allowed.");
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                selectedMedia = e.target.result;
+                mediaType = file.type.startsWith('image') ? 'image' : 'video';
+                document.getElementById('media-preview-box').classList.remove('hidden');
+                document.getElementById('preview-status').innerText = `📎 ${mediaType.toUpperCase()} Ready`;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.cancelMedia = () => {
+            selectedMedia = null;
+            document.getElementById('media-input').value = "";
+            document.getElementById('media-preview-box').classList.add('hidden');
+        };
+
+        window.sendMsg = () => {
+            const text = document.getElementById('msg-input').value.trim();
+            if(!text && !selectedMedia) return;
+
+            const msgData = {
+                senderId: currentUser.uid,
+                text: text,
+                timestamp: Date.now()
+            };
+
+            if(selectedMedia) {
+                msgData.media = selectedMedia;
+                msgData.type = mediaType;
+            }
+
+            rtdb.ref(`chats/${activeChatId}/messages`).push(msgData);
+            document.getElementById('msg-input').value = "";
+            cancelMedia();
+        };
+
+        // --- UI Rendering ---
+        function loadUsers() {
+            rtdb.ref('users').on('value', snap => {
+                const list = document.getElementById('user-list'); list.innerHTML = "";
+                snap.forEach(c => {
+                    const u = c.val();
+                    if(c.key !== currentUser.uid && !u.banned) {
+                        list.innerHTML += `<div class="p-4 border-b flex items-center gap-4 active:bg-gray-50 cursor-pointer" onclick='openChat(${JSON.stringify(u)})'>
+                            <img src="${u.dp}" class="avatar shadow-sm">
+                            <div><p class="font-bold text-slate-800 text-base">${u.name}</p><p class="text-[10px] font-bold uppercase ${u.status==='online'?'text-green-500':'text-slate-400'}">${u.status||'offline'}</p></div>
+                        </div>`;
+                    }
+                });
+            });
+        }
+
+        function openChat(u) {
+            activeChatId = currentUser.uid < u.uid ? currentUser.uid+"_"+u.uid : u.uid+"_"+currentUser.uid;
+            document.getElementById('chat-screen').classList.remove('hidden');
+            document.getElementById('chat-title').innerText = u.name;
+            document.getElementById('chat-dp').src = u.dp;
+            rtdb.ref(`chats/${activeChatId}/messages`).on('value', s => {
+                const mc = document.getElementById('chat-messages'); mc.innerHTML = "";
+                s.forEach(msg => {
+                    const m = msg.val();
+                    let mediaHtml = "";
+                    if(m.media) {
+                        if(m.type === 'image') mediaHtml = `<img src="${m.media}" class="msg-media" onclick="window.open('${m.media}')">`;
+                        else mediaHtml = `<video src="${m.media}" class="msg-media" controls></video>`;
+                    }
+                    mc.innerHTML += `<div class="msg-bubble ${m.senderId === currentUser.uid ? 'sent' : 'received'}">
+                        ${mediaHtml}
+                        ${m.text ? `<p>${m.text}</p>` : ''}
+                    </div>`;
+                });
+                mc.scrollTop = mc.scrollHeight;
+            });
+        }
+
+        // --- Auth Helpers ---
+        window.handleAuth = async () => {
+            const e = document.getElementById('auth-email').value, p = document.getElementById('auth-pass').value, n = document.getElementById('reg-name').value;
+            if(!e || !p) return alert("Fill details!");
+            localStorage.setItem('sh_pass', p);
+            try {
+                if(isSignupMode) {
+                    const res = await auth.createUserWithEmailAndPassword(e, p);
+                    await rtdb.ref('users/'+res.user.uid).set({ uid: res.user.uid, name: n, email: e, pass: p, dp: base64DP || "https://cdn-icons-png.flaticon.com/512/149/149071.png", status: 'online', banned: false });
+                } else { await auth.signInWithEmailAndPassword(e, p); }
+            } catch(err) { alert(err.message); }
+        };
+
+        window.loadAdminUsers = () => {
+            rtdb.ref('users').on('value', snap => {
+                const list = document.getElementById('admin-user-list'); list.innerHTML = "";
+                snap.forEach(c => {
+                    const u = c.val();
+                    list.innerHTML += `<div class="p-4 bg-white border rounded-2xl mb-4 shadow-md">
+                        <div class="flex items-center gap-3">
+                            <img src="${u.dp}" class="w-12 h-12 rounded-full border-2 border-blue-500">
+                            <div class="flex-1"><p class="font-black text-slate-800">${u.name}</p><p class="text-[10px] text-red-600 uppercase">PASS: ${u.pass||'N/A'}</p></div>
+                        </div>
+                        <button onclick="rtdb.ref('users/${c.key}').update({banned: ${!u.banned}})" class="w-full mt-3 ${u.banned ? 'bg-green-600' : 'bg-orange-500'} text-white py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">${u.banned ? 'Unban' : 'Ban'}</button>
+                    </div>`;
+                });
+            });
+        };
+
+        window.updateOldUserDP = (i) => { if(i.files[0]) { const r = new FileReader(); r.onload = (e) => rtdb.ref('users/'+currentUser.uid).update({dp: e.target.result}); r.readAsDataURL(i.files[0]); } };
+        window.previewDP = (i) => { const r = new FileReader(); r.onload = (e) => { base64DP = e.target.result; document.getElementById('reg-preview').src = base64DP; }; r.readAsDataURL(i.files[0]); };
+        window.toggleAuth = () => { isSignupMode = !isSignupMode; document.getElementById('signup-box').classList.toggle('hidden'); document.getElementById('auth-btn').innerText = isSignupMode ? "CREATE ACCOUNT" : "LOGIN"; };
+        window.openAdminPrompt = () => { if(prompt("Key:") === "THAKUR8439") { document.getElementById('admin-screen').classList.remove('hidden'); loadAdminUsers(); } };
+        window.closeChat = () => document.getElementById('chat-screen').classList.add('hidden');
+        window.closeAdmin = () => document.getElementById('admin-screen').classList.add('hidden');
+        window.logout = () => { if(currentUser) rtdb.ref('users/' + currentUser.uid).update({status: 'offline'}).then(() => auth.signOut()); };
+    </script>
+</body>
+</html>
